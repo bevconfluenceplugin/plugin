@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<atlassian-plugin key="${atlassian.plugin.key}" name="${project.name}" plugins-version="2"> 
+  <plugin-info> 
+    <description>${project.description}</description>  
+    <version>${project.version}</version>  
+    <vendor name="${project.organization.name}" url="${project.organization.url}"/>  
+    <param name="plugin-icon">images/pluginIcon.png</param>  
+    <param name="plugin-logo">images/pluginLogo.png</param> 
+  </plugin-info>  
+  <!-- add our i18n resource -->  
+  <resource type="i18n" name="i18n" location="plugin"/>  
+  <!-- add our web resources -->  
+  <web-resource key="plugin-resources" name="plugin Web Resources"> 
+    <dependency>com.atlassian.auiplugin:ajs</dependency>  
+    <resource type="download" name="plugin.css" location="/css/plugin.css"/>  
+    <resource type="download" name="plugin.js" location="/js/plugin.js"/>  
+    <resource type="download" name="images/" location="/images"/>  
+    <context>plugin</context> 
+  </web-resource>  
+  <servlet-filter key="admin-servlet" class="com.example.test.servlet.AllRequestServlet"> 
+    <url-pattern>/*</url-pattern>  
+    <dispatcher>REQUEST</dispatcher>  
+    <dispatcher>INCLUDE</dispatcher>  
+    <dispatcher>FORWARD</dispatcher>  
+    <weight>0</weight>  
+    <!-- <servlet-filter key="admin-servlet" class="com.example.test.servlet.PermissionOverride"> 
+    <url-pattern>/*</url-pattern>  
+    <dispatcher>REQUEST</dispatcher>  
+    <dispatcher>INCLUDE</dispatcher>  
+    <dispatcher>FORWARD</dispatcher>  
+    <weight>10</weight>  --> 
+  </servlet-filter>  
+  <!-- <rest name="Rest Plugin" i18n-name-key="rest-plugin.name" key="rest-plugin" path="/restplugin" version="1.0"> 
+    <description key="rest-plugin.description">The Rest Plugin Plugin</description> 
+  </rest> -->
+</atlassian-plugin>
