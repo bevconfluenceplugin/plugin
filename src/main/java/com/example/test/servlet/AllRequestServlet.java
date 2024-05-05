@@ -1,6 +1,9 @@
 package com.example.test.servlet;
 
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.io.CharArrayWriter;
 
 import org.apache.log4j.Logger;
 
@@ -14,9 +17,11 @@ import javax.servlet.ServletRequest;
 import javax.servlet.ServletContext;
 import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpServletResponseWrapper;
 import javax.servlet.FilterChain;
 import javax.servlet.FilterConfig;
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletRequestWrapper;
 
 import java.net.URI;
 import java.util.List;
@@ -159,7 +164,7 @@ public class AllRequestServlet implements Filter{
         HttpServletResponse httpResponse = (HttpServletResponse) response;
         HttpServletRequest httpRequest = (HttpServletRequest) request;
         String uri = httpRequest.getRequestURI();
-        //System.out.println("uri  :  " + uri);
+        System.out.println("uri  :  " + uri);
 
         ServletContext context = config.getServletContext();
         //System.out.println("contextPath:  " + context.getContextPath());
@@ -267,19 +272,68 @@ public class AllRequestServlet implements Filter{
 
             
             }
-            
+
+
         } catch (Exception e) {
             System.out.println("unfortunately, we have errored: " + e);
             //e.printStackTrace();
 
         }
 
-        chain.doFilter(request, response);
+        if (uri.startsWith("/confluence/rest")) {
+
+            System.out.println("=======================================================");
+            System.out.println("is a rest request");
+            //System.out.println(Arrays.toString(response.getHeaderNames()));
+            HttpServletResponseWrapper responseWrapper = new CharResponseWrapper(httpResponse);
+
+
+            chain.doFilter(request, responseWrapper);
+
+            System.out.println("after the chain");
+
+            String servletResponse = new String(responseWrapper.toString());
+            System.out.println(responseWrapper.getContentType());
+            System.out.println("filtered: " + servletResponse);
+
+        } else {
+            chain.doFilter(request, response);
+
+        }
+
+            //////////////////////////
+            //CHECK FOR API search
+            //////////////////////////
+            
+        // System.out.println("the response is");
+        // System.out.println(response);
     }
 
  
     @Override
     public void destroy(){
 
+    }
+
+
+}
+
+class CharResponseWrapper extends HttpServletResponseWrapper {
+    private CharArrayWriter output; 
+   
+    public String toString() {
+        return output.toString();
+    }
+
+    public CharResponseWrapper(HttpServletResponse response){
+        super(response);
+        System.out.println("we making a new charresponseWrapper");
+        output = new CharArrayWriter();
+        System.out.println("the response is: " + response.toString());
+        System.out.println("the output is: " + output);
+
+    }
+    public PrintWriter getWriter(){
+        return new PrintWriter(output);
     }
 }
