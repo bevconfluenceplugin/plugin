@@ -10,6 +10,7 @@ import org.apache.log4j.Logger;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 import java.util.Collections;
+import java.util.Iterator;
 
 import javax.servlet.ServletException;
 import javax.servlet.Filter;
@@ -28,6 +29,7 @@ import java.util.List;
 import java.util.Date;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.Set;
 import java.util.ArrayList;
 import com.atlassian.sal.api.auth.LoginUriProvider;
 import com.atlassian.sal.api.user.UserManager;
@@ -46,7 +48,17 @@ import com.atlassian.confluence.security.ContentPermissionSet;
 import com.atlassian.confluence.user.AuthenticatedUserThreadLocal;
 import com.atlassian.sal.api.web.context.HttpContext;
 
+import com.google.gson.Gson;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParser;
+import com.google.gson.JsonPrimitive;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+
+
+
+import org.springframework.web.util.ContentCachingResponseWrapper;
 import com.atlassian.plugin.spring.scanner.annotation.imports.ComponentImport;
 import javax.inject.Inject;
 
@@ -57,7 +69,6 @@ public class AllRequestServlet implements Filter{
         "/likes/1.0/content/",
         "/api/content/",
         "/rest/likes/1.0/content/"
-        
     };
 
     private String[] staticPatterns = {
@@ -164,24 +175,20 @@ public class AllRequestServlet implements Filter{
         HttpServletResponse httpResponse = (HttpServletResponse) response;
         HttpServletRequest httpRequest = (HttpServletRequest) request;
         String uri = httpRequest.getRequestURI();
-        System.out.println("uri  :  " + uri);
 
         ServletContext context = config.getServletContext();
-        //System.out.println("contextPath:  " + context.getContextPath());
-        // System.out.println("request:  " + response);
-        // System.out.println("chain:  " + chain);
-        List<String> mandatoryGroups = new ArrayList<String>();
-        mandatoryGroups.add("restricted");
-        mandatoryGroups.add("restricted2");
+        List<String> restrictedGroups = new ArrayList<String>();
+        restrictedGroups.add("restricted");
+        restrictedGroups.add("restricted2");
         try {
             UserProfile user = this.userManager.getRemoteUser(httpRequest);
             ConfluenceUser loggedInUser = AuthenticatedUserThreadLocal.get();
 
             Map<String,String[]> paramMap =  request.getParameterMap();
-            for (Map.Entry<String,String[]> entry : paramMap.entrySet()) {
+            // for (Map.Entry<String,String[]> entry : paramMap.entrySet()) {
 
-                System.out.println(entry.getKey() + " is: " + Arrays.toString(entry.getValue()));
-            }
+            //     System.out.println(entry.getKey() + " is: " + Arrays.toString(entry.getValue()));
+            // }
 
 
             String confluencePageId = request.getParameter("pageId");   
@@ -216,7 +223,7 @@ public class AllRequestServlet implements Filter{
                     for(ContentPermission permission : set){
                         if(permission.isGroupPermission()){
                             viewGroups.add(permission.getGroupName());
-                            if (!mandatoryGroups.contains(permission.getGroupName())) {
+                            if (!restrictedGroups.contains(permission.getGroupName())) {
                                 //permission.removeContentPermission
                             }
                         }
@@ -227,7 +234,7 @@ public class AllRequestServlet implements Filter{
                         for(ContentPermission permission : set){
                             if(permission.isGroupPermission()){
                                 viewGroups.add(permission.getGroupName());
-                                // if (!mandatoryGroups.contains(permission.getGroupName())) {
+                                // if (!restrictedGroups.contains(permission.getGroupName())) {
                                 //     permission.removeContentPermission
                                 // }
                             }
@@ -235,13 +242,13 @@ public class AllRequestServlet implements Filter{
                     //}
                 }
                 // for group in viewGroups
-                //     if mandatoryGroups includes group
+                //     if restrictedGroups includes group
                 //         if user not in group 
                 //             return 404/403
 
                 List<String> userGroups = this.userAccessor.getGroupNamesForUserName(loggedInUser.getName());
                 for (String group : viewGroups) {
-                    if (mandatoryGroups.contains(group)) {
+                    if (restrictedGroups.contains(group)) {
                         
                         System.out.println("uri: " + uri);
                         System.out.println("mandatory group present: " + group);
@@ -270,43 +277,143 @@ public class AllRequestServlet implements Filter{
                 Boolean isVisible = permissionManager.hasPermission(AuthenticatedUserThreadLocal.get(), Permission.VIEW, foundPage);
                 System.out.println("visible" + isVisible);
 
-            
             }
 
+
+            if (uri.startsWith("/confluence/rest")) {
+
+                System.out.println("=======================================================");
+                System.out.println("is a rest request");
+                
+                ContentCachingResponseWrapper responseWrapper = new ContentCachingResponseWrapper(httpResponse);
+                String modifiedResponseContent;
+                PrintWriter writer = responseWrapper.getWriter();
+                chain.doFilter(request, responseWrapper);
+
+                byte[] responseArray = responseWrapper.getContentAsByteArray();
+                String responseStr = new String(responseArray,responseWrapper.getCharacterEncoding());
+
+                System.out.println("response string: " + responseStr);
+                if (uri.startsWith("/confluence/rest/recentlyviewed/latest/recent")) {
+                    System.out.println("+++++++++++++++++++ recenlty viewed +++++++++++++++++++++++++");
+                    System.out.println("uri: " + uri);
+                    JsonParser jsonParser = new JsonParser();
+                    JsonElement jsonElement = jsonParser.parse(responseStr);
+
+                    System.out.println(jsonElement.toString());
+                    JsonArray originalArray = jsonElement.getAsJsonArray();
+                    JsonArray modifiedArray = new JsonArray();
+
+                    for (JsonElement item : originalArray) {
+                        JsonObject jsonObject = item.getAsJsonObject();
+                        int id = jsonObject.get("id").getAsInt();
+                        System.out.println("item is " + id);
+                        if (!isRestrictedPage(loggedInUser, id, restrictedGroups)) {
+                            modifiedArray.add(item);
+                        }
+                    }
+
+                    System.out.println("modified perms are:");
+
+                    responseWrapper.resetBuffer();
+                    writer.write(modifiedArray.toString());
+                    writer.flush();
+
+                } else if (uri.startsWith("/confluence/rest/api/search")) {
+                    int removedCount = 0;
+                    System.out.println("+++++++++++++++++++ api search +++++++++++++++++++++++++");
+                    JsonParser jsonParser = new JsonParser();
+                    JsonElement jsonElement = jsonParser.parse(responseStr);
+
+                    System.out.println(jsonElement.toString());
+                    JsonObject originalResponse = jsonElement.getAsJsonObject();
+                    JsonObject modifiedResponse = new JsonObject();
+                    //JsonArray results = originalResponse.getAsJsonArray("results");
+                    Set<Map.Entry<String,JsonElement>> originalParameters = originalResponse.entrySet();
+
+                    for (Map.Entry<String,JsonElement> entry : originalParameters) {
+                        JsonElement value = entry.getValue();
+                        if (entry.getKey().equals("results")) {
+                            System.out.println("key is results");
+                            JsonArray results = entry.getValue().getAsJsonArray();
+                            JsonArray resultsArray = new JsonArray();
+                            for (JsonElement result : results) {
+                                JsonObject resultObject = result.getAsJsonObject();
+                                JsonObject contentObject = resultObject.getAsJsonObject("content");
+        
+                                if (contentObject.has("id")) {
+                                    int id = contentObject.getAsJsonPrimitive("id").getAsInt();
+                                    System.out.println("id is " + id);
+                                    if (isRestrictedPage(loggedInUser, id, restrictedGroups)) {
+                                        removedCount++;
+                                        continue;
+                                    }
+                                }
+                                resultsArray.add(result);
+                            }
+                            value = resultsArray;
+                            //modifiedResponse.add("results", resultsArray);
+                        }
+                        // should probably change the total number of results returned
+                        else if (entry.getKey().equals("size") || entry.getKey().equals("totalSize") ) {
+                            int newSize = entry.getValue().getAsInt() - removedCount;
+                            value = new JsonPrimitive(newSize);
+                        }
+
+                        // add the other parameters
+                        modifiedResponse.add(entry.getKey(), value);
+                    }
+
+                    
+
+                    System.out.println("modified perms are:");
+                    responseWrapper.resetBuffer();
+                    System.out.println(modifiedResponse.toString());
+                    writer.write(modifiedResponse.toString());
+                    writer.flush();
+                }
+                // Check whether its an array of json objects or a json string
+                else if (responseStr.startsWith("[")) {
+                    // its an array
+
+                    System.out.println("+++++++++++++++++++ JSON ARRAY +++++++++++++++++++++++++");
+                    JsonParser jsonParser = new JsonParser();
+                    JsonElement jsonElement = jsonParser.parse(responseStr);
+                    JsonArray jsonArray = jsonElement.getAsJsonArray();
+                    JsonObject[] jsonResponse = new Gson().fromJson(jsonArray, JsonObject[].class);
+
+                } 
+                else if (responseStr.startsWith("{")) {
+                    // its an object                    
+                    JsonObject jsonResponse = new Gson().fromJson(responseStr, JsonObject.class);
+
+                    System.out.println("+++++++++++++++++++ JSON +++++++++++++++++++++++++");
+
+                    // if (jsonResponse != null) {
+                    //     for (JsonElement element : jsonResponse) {
+                    //         if (element instanceof JsonObject) {
+                    //             JsonObject result = (JsonObject) element;
+                    //             // Access other properties if needed
+                    //             System.out.println("found page id: " + result.get("Content"));
+                    //         }
+                    //     }
+                    // }
+                }
+
+
+                /*It is important to copy cached reponse body back to response stream
+                to see response */
+                responseWrapper.copyBodyToResponse();
+
+            } else {
+                chain.doFilter(request, response);
+            }
 
         } catch (Exception e) {
             System.out.println("unfortunately, we have errored: " + e);
             //e.printStackTrace();
 
         }
-
-        if (uri.startsWith("/confluence/rest")) {
-
-            System.out.println("=======================================================");
-            System.out.println("is a rest request");
-            //System.out.println(Arrays.toString(response.getHeaderNames()));
-            HttpServletResponseWrapper responseWrapper = new CharResponseWrapper(httpResponse);
-
-
-            chain.doFilter(request, responseWrapper);
-
-            System.out.println("after the chain");
-
-            String servletResponse = new String(responseWrapper.toString());
-            System.out.println(responseWrapper.getContentType());
-            System.out.println("filtered: " + servletResponse);
-
-        } else {
-            chain.doFilter(request, response);
-
-        }
-
-            //////////////////////////
-            //CHECK FOR API search
-            //////////////////////////
-            
-        // System.out.println("the response is");
-        // System.out.println(response);
     }
 
  
@@ -315,25 +422,38 @@ public class AllRequestServlet implements Filter{
 
     }
 
+    public boolean isRestrictedPage(ConfluenceUser user, int confluencePageId, List<String> restrictedGroups) {
 
-}
+        Page page = pageManager.getPage(confluencePageId);
+        List<ContentPermissionSet> permissionList = contentPermissionManager.getContentPermissionSets(page, ContentPermission.VIEW_PERMISSION);
 
-class CharResponseWrapper extends HttpServletResponseWrapper {
-    private CharArrayWriter output; 
-   
-    public String toString() {
-        return output.toString();
+        List<String> userGroups = this.userAccessor.getGroupNamesForUserName(user.getName());
+
+        List<String> viewGroups = new ArrayList<String>();
+        // Only group permissions are relevant here
+        for (ContentPermissionSet set : permissionList) {
+            for (ContentPermission permission : set) {
+                if (permission.isGroupPermission()) {
+                    viewGroups.add(permission.getGroupName());
+                }
+            }
+        }
+
+
+        for (String group : viewGroups) {
+            if (restrictedGroups.contains(group)) {
+                
+               
+                System.out.println("mandatory group present: " + group);
+                System.out.println("user groups:  " + Arrays.toString(userGroups.toArray()));
+
+                if (!userGroups.contains(group)) {
+                    System.out.println("user should NOT be able to see");
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
-    public CharResponseWrapper(HttpServletResponse response){
-        super(response);
-        System.out.println("we making a new charresponseWrapper");
-        output = new CharArrayWriter();
-        System.out.println("the response is: " + response.toString());
-        System.out.println("the output is: " + output);
-
-    }
-    public PrintWriter getWriter(){
-        return new PrintWriter(output);
-    }
 }
