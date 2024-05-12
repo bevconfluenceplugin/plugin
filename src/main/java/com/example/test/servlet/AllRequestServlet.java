@@ -279,8 +279,116 @@ public class AllRequestServlet implements Filter{
 
             }
 
+            if (uri.startsWith("/confluence/pages/viewpage.action")) {
 
-            if (uri.startsWith("/confluence/rest")) {
+                System.out.println("=======================================================");
+                System.out.println("is a view page action");
+                ContentCachingResponseWrapper responseWrapper = new ContentCachingResponseWrapper(httpResponse);
+                String modifiedResponseContent;
+                PrintWriter writer = responseWrapper.getWriter();
+                chain.doFilter(request, responseWrapper);
+
+                byte[] responseArray = responseWrapper.getContentAsByteArray();
+                String responseStr = new String(responseArray,responseWrapper.getCharacterEncoding());
+                System.out.println("response string: " + responseStr);
+
+
+            }
+
+            else if (uri.startsWith("/confluence/plugins/pagetree/naturalchildren.action")) {
+
+                System.out.println("=======================================================");
+                System.out.println("is a plugin call");
+                ContentCachingResponseWrapper responseWrapper = new ContentCachingResponseWrapper(httpResponse);
+                String modifiedResponseContent;
+                PrintWriter writer = responseWrapper.getWriter();
+                chain.doFilter(request, responseWrapper);
+
+                byte[] responseArray = responseWrapper.getContentAsByteArray();
+                String responseStr = new String(responseArray,responseWrapper.getCharacterEncoding());
+                System.out.println("response string: " + responseStr);
+
+
+            }
+            else if (uri.startsWith("/confluence/rest/dashboardmacros/1.0/updates")) {
+                System.out.println("=======================================================");
+                System.out.println("is a macro  call");
+                ContentCachingResponseWrapper responseWrapper = new ContentCachingResponseWrapper(httpResponse);
+                String modifiedResponseContent;
+                PrintWriter writer = responseWrapper.getWriter();
+                chain.doFilter(request, responseWrapper);
+
+                byte[] responseArray = responseWrapper.getContentAsByteArray();
+                String responseStr = new String(responseArray,responseWrapper.getCharacterEncoding());
+                System.out.println("response string: " + responseStr);
+
+                
+                JsonParser jsonParser = new JsonParser();
+                JsonElement jsonElement = jsonParser.parse(responseStr);
+
+                System.out.println(jsonElement.toString());
+                JsonObject originalObject = jsonElement.getAsJsonObject();
+                JsonObject modifiedObject = new JsonObject();
+                
+                JsonArray resultsArray = new JsonArray();
+                Set<Map.Entry<String,JsonElement>> originalUpdatesSet = originalObject.entrySet();
+                for (Map.Entry<String,JsonElement> entry : originalUpdatesSet) {
+                    JsonElement value = entry.getValue();
+                    if (entry.getKey().equals("changeSets")) {
+                        System.out.println("key is changesets");
+                        JsonArray results = entry.getValue().getAsJsonArray();
+                        JsonObject changeSetEntry = new JsonObject();
+
+                        for (JsonElement result : results) {
+                            JsonObject resultObject = result.getAsJsonObject();
+                            JsonObject recentUpdatesObject = resultObject.getAsJsonObject("recentUpdates");
+                            JsonArray recentUpdatesArray = recentUpdatesObject.getAsJsonArray();
+                            boolean hasValidUpdates = false;
+                            JsonArray modifiedUpdateList = new JsonArray();
+                            for (JsonElement recentUpdate : recentUpdatesArray) {
+                                JsonObject recentUpdateObject = recentUpdate.getAsJsonObject();
+                                if (recentUpdateObject.has("id")) {
+                                    int id = recentUpdateObject.getAsJsonPrimitive("id").getAsInt();
+                                    System.out.println("id is " + id);
+                                    if (!isRestrictedPage(loggedInUser, id, restrictedGroups)) {
+                                        hasValidUpdates = true;
+                                        modifiedUpdateList.add(recentUpdateObject);
+                                    } 
+                                }
+                            }
+                            if (hasValidUpdates) {
+                                Set<Map.Entry<String,JsonElement>> userUpdatesSet = result.getAsJsonObject().entrySet();
+                                for (Map.Entry<String,JsonElement> userUpdateObject : userUpdatesSet) {
+                                    //JsonObject userObject = userUpdateObject.getValue();
+                                    JsonElement userUpdateValue = entry.getValue();
+                                    if (userUpdateObject.getKey() != "recentUpdates") {
+                                        userUpdateValue = modifiedUpdateList;
+                                    }
+                                    
+                                    changeSetEntry.add(userUpdateObject.getKey(), userUpdateValue);
+                                }
+                            }
+
+                            
+                            resultsArray.add(result);
+                        }
+                        //modifiedResponse.add("results", resultsArray);
+                    }
+                    JsonElement topLevelValue = entry.getValue();
+                    // should probably change the total number of results returned
+                    if (entry.getKey().equals("changeSets")) {
+                        topLevelValue = resultsArray;
+                    }
+
+                    // add the other parameters
+                    modifiedObject.add(entry.getKey(), topLevelValue);
+                }
+                
+                responseWrapper.resetBuffer();
+                writer.write(modifiedObject.toString());
+                writer.flush();
+            }
+            else if (uri.startsWith("/confluence/rest")) {
 
                 System.out.println("=======================================================");
                 System.out.println("is a rest request");
@@ -353,6 +461,56 @@ public class AllRequestServlet implements Filter{
                             }
                             value = resultsArray;
                             //modifiedResponse.add("results", resultsArray);
+                        }
+                        // should probably change the total number of results returned
+                        else if (entry.getKey().equals("size") || entry.getKey().equals("totalSize") ) {
+                            int newSize = entry.getValue().getAsInt() - removedCount;
+                            value = new JsonPrimitive(newSize);
+                        }
+
+                        // add the other parameters
+                        modifiedResponse.add(entry.getKey(), value);
+                    }
+
+                    
+
+                    System.out.println("modified perms are:");
+                    responseWrapper.resetBuffer();
+                    System.out.println(modifiedResponse.toString());
+                    writer.write(modifiedResponse.toString());
+                    writer.flush();
+                }
+                else if (uri.startsWith("/confluence/rest/api/content/search")) {
+                    int removedCount = 0;
+                    System.out.println("+++++++++++++++++++ api content search +++++++++++++++++++++++++");
+                    JsonParser jsonParser = new JsonParser();
+                    JsonElement jsonElement = jsonParser.parse(responseStr);
+
+                    System.out.println(jsonElement.toString());
+                    JsonObject originalResponse = jsonElement.getAsJsonObject();
+                    JsonObject modifiedResponse = new JsonObject();
+                    //JsonArray results = originalResponse.getAsJsonArray("results");
+                    Set<Map.Entry<String,JsonElement>> originalParameters = originalResponse.entrySet();
+
+                    for (Map.Entry<String,JsonElement> entry : originalParameters) {
+                        JsonElement value = entry.getValue();
+                        if (entry.getKey().equals("results")) {
+                            JsonArray results = entry.getValue().getAsJsonArray();
+                            JsonArray resultsArray = new JsonArray();
+                            for (JsonElement result : results) {
+                                JsonObject resultObject = result.getAsJsonObject();
+                                
+                                if (resultObject.has("id")) {
+                                    int id = resultObject.getAsJsonPrimitive("id").getAsInt();
+                                    System.out.println("id is " + id);
+                                    if (isRestrictedPage(loggedInUser, id, restrictedGroups)) {
+                                        removedCount++;
+                                        continue;
+                                    }
+                                }
+                                resultsArray.add(result);
+                            }
+                            value = resultsArray;
                         }
                         // should probably change the total number of results returned
                         else if (entry.getKey().equals("size") || entry.getKey().equals("totalSize") ) {
