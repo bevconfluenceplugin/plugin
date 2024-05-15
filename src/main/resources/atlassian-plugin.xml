@@ -24,14 +24,8 @@
     <dispatcher>INCLUDE</dispatcher>  
     <dispatcher>FORWARD</dispatcher>  
     <weight>0</weight>  
-    <!-- <servlet-filter key="admin-servlet" class="com.example.test.servlet.PermissionOverride"> 
-    <url-pattern>/*</url-pattern>  
-    <dispatcher>REQUEST</dispatcher>  
-    <dispatcher>INCLUDE</dispatcher>  
-    <dispatcher>FORWARD</dispatcher>  
-    <weight>10</weight>  --> 
   </servlet-filter>  
-  <!-- <rest name="Rest Plugin" i18n-name-key="rest-plugin.name" key="rest-plugin" path="/restplugin" version="1.0"> 
+  <rest name="Rest Plugin" i18n-name-key="rest-plugin.name" key="rest-plugin" path="/restplugin" version="1.0"> 
     <description key="rest-plugin.description">The Rest Plugin Plugin</description> 
-  </rest> -->
+  </rest>
 </atlassian-plugin>

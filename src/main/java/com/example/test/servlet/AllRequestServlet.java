@@ -216,67 +216,31 @@ public class AllRequestServlet implements Filter{
                 List<String> viewGroups = new ArrayList<String>();
 
                 List<ContentPermissionSet> permissionList = contentPermissionManager.getContentPermissionSets(foundPage, ContentPermission.VIEW_PERMISSION);
+                      
+                List<Page> ancestors = foundPage.getAncestors();
+                System.out.println("ancestors: ");
+                System.out.println(Arrays.toString(ancestors.toArray()));
+
                 
-                List<ContentPermissionSet> updatedPermissionList = new ArrayList<ContentPermissionSet>();
-                for (ContentPermissionSet set : updatedPermissionList){
-                    
-                    for(ContentPermission permission : set){
-                        if(permission.isGroupPermission()){
-                            viewGroups.add(permission.getGroupName());
-                            if (!restrictedGroups.contains(permission.getGroupName())) {
-                                //permission.removeContentPermission
-                            }
-                        }
-                    }
+                // Don't display the child if the user doesnt have permissions to view the parent
+                for (Page ancestor : ancestors) {
+                    if (isRestrictedPage(loggedInUser, ancestor, restrictedGroups)) {
+                        ((HttpServletResponse) response).sendError(HttpServletResponse.SC_NOT_FOUND);
+                        return;
+                    } 
                 }
-                for (ContentPermissionSet set : permissionList){
-                    //if(set.getType().equals(ContentPermission.VIEW_PERMISSION)){
-                        for(ContentPermission permission : set){
-                            if(permission.isGroupPermission()){
-                                viewGroups.add(permission.getGroupName());
-                                // if (!restrictedGroups.contains(permission.getGroupName())) {
-                                //     permission.removeContentPermission
-                                // }
-                            }
-                        }
-                    //}
+
+                
+                if (isRestrictedPage(loggedInUser, foundPage, restrictedGroups)) {
+                    ((HttpServletResponse) response).sendError(HttpServletResponse.SC_NOT_FOUND);
+                    return;
                 }
-                // for group in viewGroups
-                //     if restrictedGroups includes group
-                //         if user not in group 
-                //             return 404/403
-
-                List<String> userGroups = this.userAccessor.getGroupNamesForUserName(loggedInUser.getName());
-                for (String group : viewGroups) {
-                    if (restrictedGroups.contains(group)) {
-                        
-                        System.out.println("uri: " + uri);
-                        System.out.println("mandatory group present: " + group);
-                        System.out.println("user groups:  " + Arrays.toString(userGroups.toArray()));
-
-                        if (!userGroups.contains(group)) {
-                            System.out.println("user should NOT be able to see");
-                            contentPermissionManager.removeAllUserPermissions(loggedInUser);
-                            List<String> updatedGroups = userAccessor.getGroupNames(loggedInUser);
-
-                            System.out.println("updated groups: " + Arrays.toString(updatedGroups.toArray()));
-                            ((HttpServletResponse) response).sendError(HttpServletResponse.SC_NOT_FOUND);
-                            return;
-                        }
-                        //updatedPermissionList.add(group);
-                    }
-                }
-                // ((HttpServletResponse) response).sendError(HttpServletResponse.SC_NOT_FOUND);
-                //         response.setStatus(404);
-                //         return;
-
-                System.out.println("did not throw the error");
-                System.out.println("================================");
-                System.out.println("View groups are :: " + viewGroups);
-                System.out.println("USER ==== " + loggedInUser.getName());
-                Boolean isVisible = permissionManager.hasPermission(AuthenticatedUserThreadLocal.get(), Permission.VIEW, foundPage);
-                System.out.println("visible" + isVisible);
-
+                
+                // System.out.println("================================");
+                // System.out.println("View groups are :: " + viewGroups);
+                // System.out.println("USER ==== " + loggedInUser.getName());
+                // Boolean isVisible = permissionManager.hasPermission(AuthenticatedUserThreadLocal.get(), Permission.VIEW, foundPage);
+                // System.out.println("visible" + isVisible);
             }
 
             if (uri.startsWith("/confluence/pages/viewpage.action")) {
@@ -290,9 +254,8 @@ public class AllRequestServlet implements Filter{
 
                 byte[] responseArray = responseWrapper.getContentAsByteArray();
                 String responseStr = new String(responseArray,responseWrapper.getCharacterEncoding());
-                System.out.println("response string: " + responseStr);
-
-
+                // System.out.println("response string: " + responseStr);                
+                responseWrapper.copyBodyToResponse();
             }
 
             else if (uri.startsWith("/confluence/plugins/pagetree/naturalchildren.action")) {
@@ -306,8 +269,8 @@ public class AllRequestServlet implements Filter{
 
                 byte[] responseArray = responseWrapper.getContentAsByteArray();
                 String responseStr = new String(responseArray,responseWrapper.getCharacterEncoding());
-                System.out.println("response string: " + responseStr);
-
+                // System.out.println("response string: " + responseStr);
+                responseWrapper.copyBodyToResponse();
 
             }
             else if (uri.startsWith("/confluence/rest/dashboardmacros/1.0/updates")) {
@@ -321,30 +284,28 @@ public class AllRequestServlet implements Filter{
                 byte[] responseArray = responseWrapper.getContentAsByteArray();
                 String responseStr = new String(responseArray,responseWrapper.getCharacterEncoding());
                 System.out.println("response string: " + responseStr);
-
                 
                 JsonParser jsonParser = new JsonParser();
                 JsonElement jsonElement = jsonParser.parse(responseStr);
 
-                System.out.println(jsonElement.toString());
                 JsonObject originalObject = jsonElement.getAsJsonObject();
+
+                // build the changed object
                 JsonObject modifiedObject = new JsonObject();
                 
-                JsonArray resultsArray = new JsonArray();
                 Set<Map.Entry<String,JsonElement>> originalUpdatesSet = originalObject.entrySet();
                 for (Map.Entry<String,JsonElement> entry : originalUpdatesSet) {
                     JsonElement value = entry.getValue();
+                    JsonArray modifiedChangeSetsArray= new JsonArray();
                     if (entry.getKey().equals("changeSets")) {
                         System.out.println("key is changesets");
-                        JsonArray results = entry.getValue().getAsJsonArray();
-                        JsonObject changeSetEntry = new JsonObject();
+                        JsonArray changeSetArray = entry.getValue().getAsJsonArray();
 
-                        for (JsonElement result : results) {
-                            JsonObject resultObject = result.getAsJsonObject();
-                            JsonObject recentUpdatesObject = resultObject.getAsJsonObject("recentUpdates");
-                            JsonArray recentUpdatesArray = recentUpdatesObject.getAsJsonArray();
+                        for (JsonElement changeSetEntry : changeSetArray) {
+                            JsonObject resultObject = changeSetEntry.getAsJsonObject();
+                            JsonArray recentUpdatesArray = resultObject.getAsJsonArray("recentUpdates");
                             boolean hasValidUpdates = false;
-                            JsonArray modifiedUpdateList = new JsonArray();
+                            JsonArray modifiedUpdateArray = new JsonArray();
                             for (JsonElement recentUpdate : recentUpdatesArray) {
                                 JsonObject recentUpdateObject = recentUpdate.getAsJsonObject();
                                 if (recentUpdateObject.has("id")) {
@@ -352,41 +313,44 @@ public class AllRequestServlet implements Filter{
                                     System.out.println("id is " + id);
                                     if (!isRestrictedPage(loggedInUser, id, restrictedGroups)) {
                                         hasValidUpdates = true;
-                                        modifiedUpdateList.add(recentUpdateObject);
-                                    } 
+                                        modifiedUpdateArray.add(recentUpdateObject);
+                                    }
                                 }
                             }
                             if (hasValidUpdates) {
-                                Set<Map.Entry<String,JsonElement>> userUpdatesSet = result.getAsJsonObject().entrySet();
+                                JsonObject changeSetEntryModified = new JsonObject();
+                                Set<Map.Entry<String,JsonElement>> userUpdatesSet = resultObject.entrySet();
                                 for (Map.Entry<String,JsonElement> userUpdateObject : userUpdatesSet) {
                                     //JsonObject userObject = userUpdateObject.getValue();
-                                    JsonElement userUpdateValue = entry.getValue();
-                                    if (userUpdateObject.getKey() != "recentUpdates") {
-                                        userUpdateValue = modifiedUpdateList;
+                                    if ("recentUpdates".equals(userUpdateObject.getKey())) {
+                                        changeSetEntryModified.add(userUpdateObject.getKey(), modifiedUpdateArray);
+                                    } else {
+                                        changeSetEntryModified.add(userUpdateObject.getKey(), userUpdateObject.getValue());
                                     }
-                                    
-                                    changeSetEntry.add(userUpdateObject.getKey(), userUpdateValue);
                                 }
+                                modifiedChangeSetsArray.add(changeSetEntryModified);
                             }
 
                             
-                            resultsArray.add(result);
                         }
-                        //modifiedResponse.add("results", resultsArray);
+                        //modifiedObject.add("changeSets", modifiedChangeSetsArray);
                     }
                     JsonElement topLevelValue = entry.getValue();
-                    // should probably change the total number of results returned
+                    // replace the changesets object with the modified one
                     if (entry.getKey().equals("changeSets")) {
-                        topLevelValue = resultsArray;
+                        topLevelValue = modifiedChangeSetsArray;
                     }
 
                     // add the other parameters
                     modifiedObject.add(entry.getKey(), topLevelValue);
                 }
-                
+                System.out.println("printing out the response to the updates macro");
+                System.out.println(modifiedObject.toString());
                 responseWrapper.resetBuffer();
+                //responseWrapper.setContentLength(modifiedObject.toString().length());
                 writer.write(modifiedObject.toString());
                 writer.flush();
+                responseWrapper.copyBodyToResponse();
             }
             else if (uri.startsWith("/confluence/rest")) {
 
@@ -401,7 +365,7 @@ public class AllRequestServlet implements Filter{
                 byte[] responseArray = responseWrapper.getContentAsByteArray();
                 String responseStr = new String(responseArray,responseWrapper.getCharacterEncoding());
 
-                System.out.println("response string: " + responseStr);
+                // System.out.println("response string: " + responseStr);
                 if (uri.startsWith("/confluence/rest/recentlyviewed/latest/recent")) {
                     System.out.println("+++++++++++++++++++ recenlty viewed +++++++++++++++++++++++++");
                     System.out.println("uri: " + uri);
@@ -580,9 +544,14 @@ public class AllRequestServlet implements Filter{
 
     }
 
+    // for group in viewGroups
+    //     if restrictedGroups includes group
+    //         if user not in group 
+    //             return 404/403
     public boolean isRestrictedPage(ConfluenceUser user, int confluencePageId, List<String> restrictedGroups) {
 
         Page page = pageManager.getPage(confluencePageId);
+
         List<ContentPermissionSet> permissionList = contentPermissionManager.getContentPermissionSets(page, ContentPermission.VIEW_PERMISSION);
 
         List<String> userGroups = this.userAccessor.getGroupNamesForUserName(user.getName());
@@ -614,4 +583,32 @@ public class AllRequestServlet implements Filter{
         return false;
     }
 
+    public boolean isRestrictedPage(ConfluenceUser user, Page page, List<String> restrictedGroups) {
+        List<ContentPermissionSet> permissionList = contentPermissionManager.getContentPermissionSets(page, ContentPermission.VIEW_PERMISSION);
+
+        List<String> userGroups = this.userAccessor.getGroupNamesForUserName(user.getName());
+
+        List<String> viewGroups = new ArrayList<String>();
+        // Only group permissions are relevant here
+        for (ContentPermissionSet set : permissionList) {
+            for (ContentPermission permission : set) {
+                if (permission.isGroupPermission()) {
+                    viewGroups.add(permission.getGroupName());
+                }
+            }
+        }
+
+        for (String group : viewGroups) {
+            if (restrictedGroups.contains(group)) {
+                System.out.println("mandatory group present: " + group);
+                System.out.println("user groups:  " + Arrays.toString(userGroups.toArray()));
+
+                if (!userGroups.contains(group)) {
+                    System.out.println("user should NOT be able to see");
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
 }
