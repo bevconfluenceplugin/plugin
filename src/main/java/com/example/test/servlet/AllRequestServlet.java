@@ -179,7 +179,7 @@ public class AllRequestServlet implements Filter{
         ServletContext context = config.getServletContext();
         List<String> restrictedGroups = new ArrayList<String>();
         restrictedGroups.add("restricted");
-        restrictedGroups.add("restricted2");
+        restrictedGroups.add("nat.aus");
         try {
             UserProfile user = this.userManager.getRemoteUser(httpRequest);
             ConfluenceUser loggedInUser = AuthenticatedUserThreadLocal.get();
